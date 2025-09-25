@@ -25,6 +25,14 @@ const state = {
   proxyUrl: '',
 };
 
+class DataFetchError extends Error {
+  constructor(message, attempts, options = {}) {
+    super(message, options);
+    this.name = 'DataFetchError';
+    this.attempts = Array.isArray(attempts) ? attempts : [];
+  }
+}
+
 function loadPreferences() {
   try {
     const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -57,9 +65,19 @@ function setStatus(message, options = {}) {
     dom.status.appendChild(strong);
   }
   if (details) {
-    const detailBlock = document.createElement('div');
-    detailBlock.textContent = details;
-    dom.status.appendChild(detailBlock);
+    if (Array.isArray(details)) {
+      const list = document.createElement('ul');
+      for (const item of details) {
+        const listItem = document.createElement('li');
+        listItem.textContent = typeof item === 'string' ? item : JSON.stringify(item);
+        list.appendChild(listItem);
+      }
+      dom.status.appendChild(list);
+    } else {
+      const detailBlock = document.createElement('div');
+      detailBlock.textContent = details;
+      dom.status.appendChild(detailBlock);
+    }
   }
 }
 
@@ -87,7 +105,7 @@ async function fetchXml(url, encoding = 'windows-1250') {
     attempts.push({ label: 'CORS proxy', url: combineProxyUrl(state.proxyUrl, url) });
   }
 
-  const encountered = [];
+  const attemptErrors = [];
   for (const attempt of attempts) {
     try {
       const response = await fetch(attempt.url, {
@@ -109,11 +127,18 @@ async function fetchXml(url, encoding = 'windows-1250') {
       return doc;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      encountered.push(`${attempt.label}: ${reason}`);
+      attemptErrors.push({
+        label: attempt.label,
+        url: attempt.url,
+        message: reason,
+        error,
+      });
     }
   }
 
-  throw new Error(encountered.join('\n'));
+  throw new DataFetchError('Všechny pokusy o načtení XML selhaly.', attemptErrors, {
+    cause: attemptErrors.at(-1)?.error,
+  });
 }
 
 function getFirstAvailable(node, keys) {
@@ -325,11 +350,43 @@ async function loadData() {
     renderRegionFilter(regions);
     renderCandidates(candidates);
   } catch (error) {
-    const message =
+    const isDetailedError = error instanceof DataFetchError;
+    const baseMessage =
+      'Nepodařilo se načíst potřebná data ani po několika pokusech. Níže jsou uvedeny podrobnosti.';
+    const fallbackMessage =
       'Nepodařilo se načíst potřebná data. Zkontrolujte prosím CORS omezení a případně nastavte proxy.';
+    const details = [];
+
+    if (isDetailedError) {
+      const attempts = error.attempts.length ? error.attempts : [];
+      attempts.forEach((attempt, index) => {
+        const prefix = `${index + 1}. pokus – ${attempt.label}`;
+        const urlInfo = attempt.url ? `URL: ${attempt.url}` : 'URL: neuvedeno';
+        const detailMessage = attempt.message || 'bez bližší specifikace';
+        details.push(`${prefix} | ${urlInfo} | Chyba prohlížeče: ${detailMessage}`);
+      });
+    }
+
+    details.push(`Aktuální původ stránky: ${window.location.origin}`);
+    details.push(
+      `Nastavená CORS proxy: ${state.proxyUrl ? state.proxyUrl : 'žádná (pokus pouze o přímé připojení)'}`
+    );
+    if (navigator) {
+      details.push(`Detekované připojení k internetu: ${navigator.onLine ? 'ano' : 'ne'}`);
+    }
+    details.push(
+      'Tip: Pokud jsou všechny pokusy blokovány prohlížečem (často hláška o CORS), zkuste nakonfigurovat proxy server, který přidá odpovídající CORS hlavičky.'
+    );
+
+    const message = isDetailedError ? baseMessage : fallbackMessage;
+
     setStatus(message, {
       isError: true,
-      details: error instanceof Error ? error.message : String(error),
+      details: isDetailedError
+        ? details
+        : error instanceof Error
+        ? `${error.message}\n${details.join('\n')}`
+        : `${String(error)}\n${details.join('\n')}`,
     });
   } finally {
     dom.reloadButton.disabled = false;
