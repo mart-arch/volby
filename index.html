@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <title>Preferenční hlasy – volby 2021</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="layout">
+    <h1>Preferenční hlasy kandidátů</h1>
+    <p class="lead">Načtení dat ze serveru volby.cz může chvíli trvat. Zobrazí se pouze kandidáti, kteří získali alespoň 5&nbsp;% hlasů své strany v daném kraji.</p>
+    <section id="status" class="status" aria-live="polite">Načítám data…</section>
+    <section class="table-wrapper hidden" id="results-section">
+      <table id="results-table">
+        <thead>
+          <tr>
+            <th scope="col">Kraj</th>
+            <th scope="col">Číslo kandidáta</th>
+            <th scope="col">Jméno</th>
+            <th scope="col">Číslo strany</th>
+            <th scope="col">Strana</th>
+            <th scope="col">Preferenční hlasy</th>
+            <th scope="col">Hlasů strany celkem</th>
+            <th scope="col">Podíl</th>
+          </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="script.js" type="module"></script>
+</body>
+</html>
