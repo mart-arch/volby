@@ -1,0 +1,82 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  background: radial-gradient(circle at top, #f7f8fb, #dfe3ee);
+}
+
+main {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 1rem;
+  padding: 2rem;
+  width: min(90vw, 640px);
+  box-shadow: 0 1.25rem 3rem -2rem rgba(31, 41, 55, 0.6);
+}
+
+h1 {
+  margin-top: 0;
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+}
+
+form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+label {
+  font-weight: 600;
+}
+
+input[type='url'] {
+  padding: 0.75rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.75rem;
+  font-size: 1rem;
+}
+
+button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, #2563eb, #9333ea);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0.75rem 1.5rem -1rem rgba(79, 70, 229, 0.7);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+#result {
+  margin-top: 1.5rem;
+  min-height: 4rem;
+}
+
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  overflow-x: auto;
+}
+
+pre.error {
+  background: #7f1d1d;
+}
