@@ -10,9 +10,9 @@
     <header class="page-header">
       <h1>Přednostní hlasy kandidátů – volby 2021</h1>
       <p>
-        Aplikace běžící čistě v prohlížeči. Načítá oficiální XML data z webu
+        Serverová proxy stáhne oficiální XML data z webu
         <a href="https://www.volby.cz/" target="_blank" rel="noreferrer">volby.cz</a>
-        a zobrazí kandidáty, kteří získali alespoň 5&nbsp;% přednostních hlasů své strany.
+        a zobrazuje kandidáty, kteří získali alespoň 5&nbsp;% přednostních hlasů své strany.
       </p>
     </header>
 
@@ -24,22 +24,6 @@
             <option value="">Všechny kraje</option>
           </select>
         </label>
-        <details class="control control--advanced">
-          <summary>Pokročilé nastavení</summary>
-          <label class="control">
-            <span>URL CORS proxy (volitelné)</span>
-            <input
-              id="proxyInput"
-              type="url"
-              placeholder="např. https://cors.isomorphic-git.org/"
-              autocomplete="off"
-            />
-          </label>
-          <p class="control__hint">
-            GitHub Pages poskytuje pouze statické soubory. Pokud server volby.cz nepovoluje
-            přístup z jiného původu, je nutné použít vlastní proxy, která CORS hlavičky doplní.
-          </p>
-        </details>
         <button id="reloadButton" type="button" class="button">Znovu načíst data</button>
       </section>
 
@@ -66,7 +50,7 @@
     <footer class="page-footer">
       <p>
         Zdroj dat: <a href="https://www.volby.cz/opendata/ps2021/" target="_blank" rel="noreferrer">ČSÚ</a>.
-        Kód funguje plně na straně klienta, takže je vhodný pro nasazení na GitHub Pages.
+        Kód kombinuje serverovou proxy a klientskou aplikaci.
       </p>
     </footer>
 

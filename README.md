@@ -1,48 +1,45 @@
 # Preferenční hlasy – volby 2021
 
-Tento projekt zobrazuje kandidáty do Poslanecké sněmovny 2021, kteří ve svém kraji
-získali alespoň 5 % preferenčních hlasů své strany. Celá aplikace běží na straně
-klienta, takže ji lze nasadit na [GitHub Pages](https://pages.github.com/)
-bez nutnosti provozovat vlastní backend.
+Tento projekt kombinuje klientskou aplikaci a serverovou proxy. Serverová část stáhne
+oficiální XML soubory České volební statistiky, dekóduje je z Windows-1250 a převede
+je na JSON. Frontend následně zobrazí kandidáty, kteří ve svém kraji získali alespoň
+5 % preferenčních hlasů své strany, včetně názvu strany z číselníku `cvs.xml`.
 
-## Omezení GitHub Pages
+## Jak aplikace funguje
 
-GitHub Pages poskytuje pouze statické soubory. Všechny požadavky na externí API
-jsou tedy zpracovávány přímo prohlížečem a podléhají CORS pravidlům cílového
-serveru. Pokud server `volby.cz` nevrací hlavičku `Access-Control-Allow-Origin`
-s hodnotou umožňující přístup z vašeho webu, prohlížeč požadavek z bezpečnostních
-důvodů zablokuje. V takovém případě je nutné použít vlastní CORS proxy (např.
-s implementací na Cloudflare Workers, Vercelu apod.), která požadavky přepošle a
-potřebné hlavičky doplní.
+1. Express server zpřístupňuje statické soubory v adresáři `public/` a endpoint
+   `GET /api/candidates`.
+2. Při každém dotazu na API se stáhnou dva XML dokumenty:
+   - `https://www.volby.cz/pls/ps2021/vysledky_kandid`
+   - `https://www.volby.cz/opendata/ps2021/xml/cvs.xml`
+3. Server agreguje data za všechny kraje, u každého kandidáta spočte podíl
+   preferenčních hlasů vůči celkovému počtu hlasů strany v daném kraji a vrátí jen ty,
+   kteří dosáhli alespoň 5 %.
+4. Frontend zobrazuje výsledky v přehledné tabulce s možností filtrovat podle kraje.
 
-Aplikace umožňuje zadat URL takové proxy přímo v rozhraní. Pokud pole ponecháte
-prázdné, pokusí se nejprve o přímé načtení bez proxy.
+> **Poznámka:** Při nasazení mimo GitHub Pages je potřeba, aby běžel Node.js server,
+> který proxy poskytuje. GitHub Pages samotné serverovou logiku nepodporuje.
+
+## Požadavky
+
+- Node.js 18+
 
 ## Lokální spuštění
 
-Protože jde o čistě statický web, postačí jakýkoliv HTTP server. Nejjednodušší je
-použít vestavěný server v Pythonu:
-
 ```bash
-python3 -m http.server 8000
+npm install
+npm start
 ```
 
-Poté otevřete stránku [http://localhost:8000](http://localhost:8000) ve svém
-prohlížeči.
+Aplikace se spustí na adrese <http://localhost:3000>. Po načtení stránky proběhne
+volání `/api/candidates`; v případě problémů zkontrolujte log serveru v konzoli.
 
 ## Struktura projektu
 
-- `index.html` – základní HTML stránka v češtině.
-- `styles.css` – responzivní vzhled se světlým i tmavým režimem.
-- `app.js` – načtení XML z `volby.cz`, jejich dekódování (Windows-1250) a
-  filtrování kandidátů splňujících hranici 5 %.
-
-## Nasazení na GitHub Pages
-
-1. Nahrajte obsah repozitáře do větve `main`.
-2. V nastavení GitHub Pages zvolte zdroj `Deploy from a branch` a složku `/ (root)`.
-3. Po nasazení spusťte aplikaci ve svém prohlížeči. Pokud se data nenačtou, zadejte
-   v sekci „Pokročilé nastavení“ URL své CORS proxy a stránku znovu načtěte.
+- `public/index.html` – HTML rozhraní s filtrem krajů a tabulkou kandidátů.
+- `public/styles.css` – responzivní vzhled včetně tmavého režimu.
+- `public/app.js` – klientská logika pro načtení a vykreslení dat.
+- `server.js` – Express server, který zprostředkuje data ve formátu JSON.
 
 ## Licence
 

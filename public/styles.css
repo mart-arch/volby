@@ -77,8 +77,7 @@ body {
   font-weight: 600;
 }
 
-.control select,
-.control input {
+.control select {
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
   border: 1px solid var(--border);
@@ -86,8 +85,7 @@ body {
 }
 
 @media (prefers-color-scheme: dark) {
-  .control select,
-  .control input {
+  .control select {
     background: #101010;
     color: #f2f2f2;
     border-color: var(--border-dark);
@@ -142,6 +140,12 @@ body {
 
 .status--error {
   color: #b00020;
+}
+
+.status__details {
+  font-weight: 400;
+  margin-top: 0.35rem;
+  white-space: pre-wrap;
 }
 
 .table-wrapper {
