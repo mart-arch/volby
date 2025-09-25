@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Přednostní hlasy kandidátů – volby 2021</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Přednostní hlasy kandidátů – volby 2021</h1>
+      <p>
+        Aplikace běžící čistě v prohlížeči. Načítá oficiální XML data z webu
+        <a href="https://www.volby.cz/" target="_blank" rel="noreferrer">volby.cz</a>
+        a zobrazí kandidáty, kteří získali alespoň 5&nbsp;% přednostních hlasů své strany.
+      </p>
+    </header>
+
+    <main class="page-main">
+      <section class="controls">
+        <label class="control">
+          <span>Filtrovat podle kraje</span>
+          <select id="regionFilter">
+            <option value="">Všechny kraje</option>
+          </select>
+        </label>
+        <details class="control control--advanced">
+          <summary>Pokročilé nastavení</summary>
+          <label class="control">
+            <span>URL CORS proxy (volitelné)</span>
+            <input
+              id="proxyInput"
+              type="url"
+              placeholder="např. https://cors.isomorphic-git.org/"
+              autocomplete="off"
+            />
+          </label>
+          <p class="control__hint">
+            GitHub Pages poskytuje pouze statické soubory. Pokud server volby.cz nepovoluje
+            přístup z jiného původu, je nutné použít vlastní proxy, která CORS hlavičky doplní.
+          </p>
+        </details>
+        <button id="reloadButton" type="button" class="button">Znovu načíst data</button>
+      </section>
+
+      <section class="status" id="status"></section>
+
+      <section class="table-wrapper">
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th scope="col">Kraj</th>
+              <th scope="col">Strana</th>
+              <th scope="col">Číslo kandidáta</th>
+              <th scope="col">Jméno</th>
+              <th scope="col">Přednostní hlasy</th>
+              <th scope="col">Hlasy pro stranu</th>
+              <th scope="col">Podíl</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <p>
+        Zdroj dat: <a href="https://www.volby.cz/opendata/ps2021/" target="_blank" rel="noreferrer">ČSÚ</a>.
+        Kód funguje plně na straně klienta, takže je vhodný pro nasazení na GitHub Pages.
+      </p>
+    </footer>
+
+    <template id="rowTemplate">
+      <tr>
+        <td class="cell-region"></td>
+        <td class="cell-party"></td>
+        <td class="cell-candidate-number"></td>
+        <td class="cell-candidate-name"></td>
+        <td class="cell-preference"></td>
+        <td class="cell-party-total"></td>
+        <td class="cell-ratio"></td>
+      </tr>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
