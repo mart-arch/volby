@@ -91,7 +91,16 @@ async function loadData() {
   try {
     const response = await fetch('/api/candidates');
     if (!response.ok) {
-      throw new Error(`Chyba při načítání dat: ${response.status}`);
+      let errorDetails = '';
+      try {
+        const errorPayload = await response.json();
+        if (errorPayload?.details) {
+          errorDetails = ` (${errorPayload.details})`;
+        }
+      } catch (parseError) {
+        console.error('Chyba při parsování chybové odpovědi', parseError);
+      }
+      throw new Error(`Chyba při načítání dat: ${response.status}${errorDetails}`);
     }
     const payload = await response.json();
     cachedCandidates = Array.isArray(payload.candidates) ? payload.candidates : [];
@@ -110,7 +119,7 @@ async function loadData() {
     setStatus('');
   } catch (error) {
     console.error(error);
-    setStatus('Nepodařilo se načíst data. Zkuste to prosím znovu později.', true);
+    setStatus(`Nepodařilo se načíst data. ${error instanceof Error ? error.message : ''}`.trim(), true);
   }
 }
 

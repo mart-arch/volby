@@ -6,6 +6,19 @@ import { XMLParser } from 'fast-xml-parser';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const VERBOSE = /^(1|true|yes)$/i.test(String(process.env.DEBUG_VERBOSE ?? 'true'));
+
+function debugLog(message, meta) {
+  if (!VERBOSE) {
+    return;
+  }
+  if (meta) {
+    console.log(`[debug] ${message}`, meta);
+  } else {
+    console.log(`[debug] ${message}`);
+  }
+}
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '',
@@ -51,12 +64,29 @@ function firstDefined(object, candidates) {
 }
 
 async function fetchXml(url, encoding = 'utf-8') {
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; ElectionDataFetcher/1.0)',
-      'Accept': 'application/xml,text/xml;q=0.9,*/*;q=0.8',
-      'Referer': 'https://www.volby.cz/',
-    },
+  debugLog(`Fetching XML from ${url}`);
+  const start = Date.now();
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ElectionDataFetcher/1.0)',
+        'Accept': 'application/xml,text/xml;q=0.9,*/*;q=0.8',
+        'Referer': 'https://www.volby.cz/',
+      },
+    });
+  } catch (networkError) {
+    debugLog(`Network error while fetching ${url}`, {
+      error: networkError instanceof Error ? networkError.message : networkError,
+    });
+    throw networkError;
+  }
+
+  const duration = Date.now() - start;
+  debugLog(`Received response from ${url}`, {
+    status: response.status,
+    ok: response.ok,
+    durationMs: duration,
   });
 
   if (!response.ok) {
@@ -67,6 +97,10 @@ async function fetchXml(url, encoding = 'utf-8') {
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
   const text = iconv.decode(buffer, encoding);
+  debugLog(`Decoded ${url} payload`, {
+    encoding,
+    bytes: buffer.length,
+  });
   return parser.parse(text);
 }
 
@@ -104,12 +138,14 @@ async function buildPartyDictionary() {
     result.set(String(partyId).trim(), displayName.trim());
   }
 
+  debugLog('Built party dictionary', { entries: result.size });
   return result;
 }
 
 function collectQualifiedCandidates(electionData, partyNames) {
   const qualified = [];
   const regions = toArray(electionData?.VYSLEDKY?.KRAJ || electionData?.KRAJE || electionData?.KRAJ);
+  debugLog('Processing regions', { regions: regions.length });
   for (const region of regions) {
     if (!region) continue;
 
@@ -198,6 +234,7 @@ function collectQualifiedCandidates(electionData, partyNames) {
     }
   }
 
+  debugLog('Collected qualified candidates', { count: qualified.length });
   return qualified;
 }
 
@@ -211,7 +248,12 @@ app.get('/api/candidates', async (_req, res) => {
     res.json({ candidates: qualifiedCandidates });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Failed to load election data' });
+    const errorPayload = { error: 'Failed to load election data' };
+    if (VERBOSE && error instanceof Error) {
+      errorPayload.details = error.message;
+      errorPayload.stack = error.stack;
+    }
+    res.status(500).json(errorPayload);
   }
 });
 
