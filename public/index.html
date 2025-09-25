@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Volby Data Proxy Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Remote Data Fetch via Serverless Proxy</h1>
+      <p>
+        Use the form below to fetch JSON data from an external endpoint. The
+        request is routed through a small serverless function that adds the
+        necessary CORS headers so the response can be consumed by a static site
+        hosted on GitHub Pages or Netlify.
+      </p>
+      <form id="fetch-form">
+        <label for="target-url">External URL</label>
+        <input
+          id="target-url"
+          name="target-url"
+          type="url"
+          placeholder="https://api.example.com/data"
+          required
+        />
+        <button type="submit">Fetch via Proxy</button>
+      </form>
+      <section id="result" aria-live="polite"></section>
+    </main>
+    <script src="main.js" type="module"></script>
+  </body>
+</html>
