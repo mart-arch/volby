@@ -9,6 +9,9 @@ const regionHeading = document.querySelector("#regionHeading");
 const regionMeta = document.querySelector("#regionMeta");
 const partiesContainer = document.querySelector("#regionParties");
 
+let partyNamesByCode = new Map();
+let candidateNamesByKey = new Map();
+
 let regions = [];
 
 if (document.readyState === "loading") {
@@ -26,19 +29,11 @@ function init() {
 
 async function loadAndRender() {
   try {
-    const response = await fetch("ps.xml", { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Server vrátil stav ${response.status}`);
-    }
+    const resultsPromise = fetchResultsDocument();
+    const lookupsPromise = loadLookups();
 
-    const xmlText = await response.text();
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlText, "application/xml");
-
-    const parseError = xmlDoc.querySelector("parsererror");
-    if (parseError) {
-      throw new Error("XML soubor se nepodařilo zpracovat.");
-    }
+    const xmlDoc = await resultsPromise;
+    await lookupsPromise;
 
     regions = parseResults(xmlDoc);
 
@@ -81,6 +76,49 @@ async function loadAndRender() {
   }
 }
 
+async function fetchResultsDocument() {
+  const response = await fetch("ps.xml", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Server vrátil stav ${response.status}`);
+  }
+
+  const xmlText = await response.text();
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlText, "application/xml");
+
+  const parseError = xmlDoc.querySelector("parsererror");
+  if (parseError) {
+    throw new Error("XML soubor se nepodařilo zpracovat.");
+  }
+
+  return xmlDoc;
+}
+
+async function loadLookups() {
+  const [partyResult, candidateResult] = await Promise.allSettled([
+    fetchXmlDocument("cns.xml"),
+    fetchXmlDocument("psrk.xml"),
+  ]);
+
+  if (partyResult.status === "fulfilled") {
+    partyNamesByCode = parsePartyLookup(partyResult.value);
+  } else {
+    partyNamesByCode = new Map();
+    if (partyResult.reason) {
+      console.warn("Nepodařilo se načíst číselník stran:", partyResult.reason);
+    }
+  }
+
+  if (candidateResult.status === "fulfilled") {
+    candidateNamesByKey = parseCandidateLookup(candidateResult.value);
+  } else {
+    candidateNamesByKey = new Map();
+    if (candidateResult.reason) {
+      console.warn("Nepodařilo se načíst číselník kandidátů:", candidateResult.reason);
+    }
+  }
+}
+
 function handleRegionChange(event) {
   const selectedCode = event.target.value;
   const region = regions.find((item) => item.code === selectedCode);
@@ -105,7 +143,8 @@ function parseResults(xmlDoc) {
 
 function parseRegion(regionElement) {
   const attributes = collectAttributes(regionElement);
-  const code = attributes.get("CIS_KRAJ") || attributes.get("KOD") || "";
+  const rawCode = attributes.get("CIS_KRAJ") || attributes.get("KOD") || "";
+  const code = rawCode || "";
   const name =
     attributes.get("NAZ_KRAJ") ||
     getChildTextByLocalNames(regionElement, ["NAZ_KRAJ", "NAZEV_KRAJE", "NAZEV"]) ||
@@ -113,14 +152,16 @@ function parseRegion(regionElement) {
 
   const turnout = parseTurnout(regionElement);
   const partiesMap = parseParties(regionElement);
-  const candidates = parseCandidates(regionElement);
+  const lookupRegionCode = normalizeNumericCode(rawCode || code);
+  const candidates = parseCandidates(regionElement, lookupRegionCode);
 
   candidates.forEach((candidate) => {
     let party = partiesMap.get(candidate.partyCode);
     if (!party) {
+      const normalizedPartyCode = normalizeNumericCode(candidate.partyCode);
       party = {
         code: candidate.partyCode,
-        name: `Strana ${candidate.partyCode}`,
+        name: partyNamesByCode.get(normalizedPartyCode) || `Strana ${candidate.partyCode}`,
         totalVotes: 0,
         candidates: [],
       };
@@ -185,7 +226,9 @@ function parseParties(regionElement) {
         getChildTextByLocalNames(partyElement, ["POC_HLASU", "HLASY", "HLASY_CELKEM"])
     );
 
+    const normalizedCode = normalizeNumericCode(code);
     const name =
+      partyNamesByCode.get(normalizedCode) ||
       attributes.get("NAZEV_STRANY") ||
       attributes.get("NAZ_STRANA") ||
       getChildTextByLocalNames(partyElement, ["NAZEV", "NAZEV_STRANY", "NAZ_STRANA"]) ||
@@ -202,7 +245,7 @@ function parseParties(regionElement) {
   return partiesMap;
 }
 
-function parseCandidates(regionElement) {
+function parseCandidates(regionElement, regionLookupCode) {
   const candidatesContainer = getFirstChildByLocalName(regionElement, "KANDIDATI");
   if (!candidatesContainer) {
     return [];
@@ -211,11 +254,11 @@ function parseCandidates(regionElement) {
   const candidateElements = getChildrenByLocalName(candidatesContainer, "KANDIDAT");
 
   return candidateElements
-    .map((candidateElement) => parseCandidate(candidateElement))
+    .map((candidateElement) => parseCandidate(candidateElement, regionLookupCode))
     .filter(Boolean);
 }
 
-function parseCandidate(candidateElement) {
+function parseCandidate(candidateElement, regionLookupCode) {
   const attributes = collectAttributes(candidateElement);
   const partyCode = attributes.get("KSTRANA");
   if (!partyCode) {
@@ -232,6 +275,16 @@ function parseCandidate(candidateElement) {
   }
 
   const order = parseNumber(attributes.get("PORCISLO"));
+  const normalizedPartyCode = normalizeNumericCode(partyCode);
+  const normalizedOrder = Number.isFinite(order)
+    ? String(order)
+    : normalizeNumericCode(attributes.get("PORCISLO"));
+  const lookupKey =
+    regionLookupCode && normalizedPartyCode && normalizedOrder
+      ? buildCandidateLookupKey(regionLookupCode, normalizedPartyCode, normalizedOrder)
+      : null;
+  const lookupName = lookupKey ? candidateNamesByKey.get(lookupKey) : undefined;
+
   const prefix =
     attributes.get("TITUL_PRED") ||
     attributes.get("TITULPRED") ||
@@ -258,14 +311,22 @@ function parseCandidate(candidateElement) {
     pieces.push(coreName);
   }
 
-  let name = pieces.join(" ").trim();
-  if (!name) {
-    const fallbackText = candidateElement.textContent.trim();
-    name = fallbackText || `Kandidát ${Number.isFinite(order) ? order : ""}`.trim();
+  const textContent = candidateElement.textContent.trim();
+  let fallbackName = pieces.join(" ").trim();
+  if (!fallbackName) {
+    fallbackName = textContent || (Number.isFinite(order) ? `Kandidát ${order}` : "Kandidát");
+  }
+  if (suffix && fallbackName) {
+    fallbackName = `${fallbackName}, ${suffix}`;
+  } else if (suffix) {
+    fallbackName = suffix;
   }
 
-  if (suffix) {
-    name = name ? `${name}, ${suffix}` : suffix;
+  let name = lookupName || fallbackName;
+  if (lookupName && suffix && !lookupName.includes(suffix)) {
+    name = `${lookupName}, ${suffix}`;
+  } else if (!name) {
+    name = Number.isFinite(order) ? `Kandidát ${order}` : "Kandidát";
   }
 
   return {
@@ -440,6 +501,103 @@ function renderParty(party) {
   table.append(thead, tbody);
   article.append(header, table);
   return article;
+}
+
+async function fetchXmlDocument(path) {
+  const response = await fetch(path, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} při načítání ${path}`);
+  }
+
+  const xmlText = await response.text();
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlText, "application/xml");
+
+  const parseError = xmlDoc.querySelector("parsererror");
+  if (parseError) {
+    throw new Error(`Soubor ${path} se nepodařilo zpracovat jako XML.`);
+  }
+
+  return xmlDoc;
+}
+
+function parsePartyLookup(xmlDoc) {
+  const map = new Map();
+  const rows = Array.from(xmlDoc.getElementsByTagNameNS("*", "CNS_ROW"));
+  rows.forEach((row) => {
+    const codeText = getChildTextByLocalNames(row, ["NSTRANA"]);
+    const normalizedCode = normalizeNumericCode(codeText);
+    if (!normalizedCode) {
+      return;
+    }
+
+    const shortName =
+      getChildTextByLocalNames(row, ["ZKRATKAN30", "ZKRATKAN8"]) ||
+      getChildTextByLocalNames(row, ["ZKRATKA", "ZKRATKA30"]);
+    const fullName = getChildTextByLocalNames(row, ["NAZEV_STRN", "NAZEV"]);
+    const name = shortName || fullName || `Strana ${normalizedCode}`;
+
+    map.set(normalizedCode, name);
+  });
+  return map;
+}
+
+function parseCandidateLookup(xmlDoc) {
+  const map = new Map();
+  const rows = Array.from(xmlDoc.getElementsByTagNameNS("*", "PS_REGKAND_ROW"));
+  rows.forEach((row) => {
+    const regionCode = normalizeNumericCode(getChildTextByLocalNames(row, ["VOLKRAJ"]));
+    const partyCode = normalizeNumericCode(getChildTextByLocalNames(row, ["KSTRANA"]));
+    const orderCode = normalizeNumericCode(getChildTextByLocalNames(row, ["PORCISLO"]));
+    if (!regionCode || !partyCode || !orderCode) {
+      return;
+    }
+
+    const prefix = getChildTextByLocalNames(row, ["TITULPRED"]);
+    const suffix = getChildTextByLocalNames(row, ["TITULZA"]);
+    const firstName = getChildTextByLocalNames(row, ["JMENO"]);
+    const lastName = getChildTextByLocalNames(row, ["PRIJMENI"]);
+
+    const pieces = [];
+    if (prefix) {
+      pieces.push(prefix);
+    }
+    const coreName = [firstName, lastName].filter(Boolean).join(" ").trim();
+    if (coreName) {
+      pieces.push(coreName);
+    }
+
+    let name = pieces.join(" ").trim();
+    if (!name) {
+      name = `Kandidát ${orderCode}`;
+    }
+    if (suffix) {
+      name = name ? `${name}, ${suffix}` : suffix;
+    }
+
+    const key = buildCandidateLookupKey(regionCode, partyCode, orderCode);
+    map.set(key, name);
+  });
+  return map;
+}
+
+function buildCandidateLookupKey(regionCode, partyCode, order) {
+  return `${regionCode}::${partyCode}::${order}`;
+}
+
+function normalizeNumericCode(value) {
+  if (value == null) {
+    return "";
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return "";
+  }
+  const parsed = Number.parseInt(text, 10);
+  if (Number.isFinite(parsed)) {
+    return String(parsed);
+  }
+  return text;
 }
 
 function updateStatus(message, type = "info", icon = "ℹ️") {
