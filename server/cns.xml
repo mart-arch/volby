@@ -1,0 +1,14 @@
+<CNS xmlns="http://www.volby.cz/vol/" DATGENER="2025-01-01T00:00:00">
+  <CNS_ROW>
+    <NSTRANA>1</NSTRANA>
+    <NAZEV_STRN>Občanská demokratická strana</NAZEV_STRN>
+    <ZKRATKAN30>ODS</ZKRATKAN30>
+    <ZKRATKAN8>ODS</ZKRATKAN8>
+  </CNS_ROW>
+  <CNS_ROW>
+    <NSTRANA>2</NSTRANA>
+    <NAZEV_STRN>Česká pirátská strana</NAZEV_STRN>
+    <ZKRATKAN30>Piráti</ZKRATKAN30>
+    <ZKRATKAN8>Piráti</ZKRATKAN8>
+  </CNS_ROW>
+</CNS>
