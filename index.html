@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Výsledky preferenčních hlasů</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="page__header">
+        <h1>Výsledky preferenčních hlasů</h1>
+        <p class="page__intro">
+          Tato stránka načte soubor <code>ps.xml</code> ze serveru a zobrazí kandidáty,
+          kteří získali dostatečný počet preferenčních hlasů.
+        </p>
+      </header>
+
+      <section id="status" class="status" role="status" aria-live="polite">
+        <span class="status__icon" aria-hidden="true">⏳</span>
+        <span class="status__text">Načítám data…</span>
+      </section>
+
+      <section id="results" class="results" hidden></section>
+    </main>
+
+    <script src="main.js" type="module"></script>
+  </body>
+</html>
