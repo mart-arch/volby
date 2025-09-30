@@ -1,65 +1,28 @@
 const PREFERENCE_THRESHOLD_RATIO = 0.05;
-const PARTY_TAG_NAMES = [
-  "STRANA",
-  "STRANA_KANDIDATKA",
-  "KANDIDATKA",
-  "PARTY",
-  "LIST",
-  "LISTINA"
-];
-const PARTY_NAME_TAGS = [
-  "NAZEV",
-  "NAZEV_STRANY",
-  "STRANA",
-  "PARTY_NAME",
-  "NAZEV_KANDIDATKY",
-  "NAZEV_PARTY"
-];
-const PARTY_TOTAL_VOTES_TAGS = [
-  "HLASY_STRANA",
-  "HLASY",
-  "VOTES",
-  "HLASY_CELKEM",
-  "HLASY_PLATNE",
-  "TOTAL_VOTES"
-];
-const CANDIDATE_TAG_NAMES = [
-  "KANDIDAT",
-  "KANDIDATKA",
-  "CANDIDATE",
-  "OSOBA",
-  "PERSON"
-];
-const CANDIDATE_FIRST_NAME_TAGS = [
-  "JMENO",
-  "KRESTNI_JMENO",
-  "FIRST_NAME",
-  "KRESTNIJMENO"
-];
-const CANDIDATE_LAST_NAME_TAGS = [
-  "PRIJMENI",
-  "SURNAME",
-  "LAST_NAME"
-];
-const CANDIDATE_TITLE_PREFIX_TAGS = ["TITUL_PRED", "TITLE_BEFORE"];
-const CANDIDATE_TITLE_SUFFIX_TAGS = ["TITUL_ZA", "TITLE_AFTER"];
-const CANDIDATE_VOTES_TAGS = [
-  "PREFERENCNI_HLASY",
-  "PREF_HLASY",
-  "HLASY",
-  "VOTES",
-  "PREF_VOTES",
-  "PREFERENTIAL_VOTES"
-];
 
 const statusContainer = document.querySelector("#status");
-const statusText = statusContainer.querySelector(".status__text");
-const statusIcon = statusContainer.querySelector(".status__icon");
-const resultsContainer = document.querySelector("#results");
+const statusText = statusContainer?.querySelector(".status__text");
+const statusIcon = statusContainer?.querySelector(".status__icon");
+const resultsSection = document.querySelector("#results");
+const regionSelect = document.querySelector("#regionSelect");
+const regionHeading = document.querySelector("#regionHeading");
+const regionMeta = document.querySelector("#regionMeta");
+const partiesContainer = document.querySelector("#regionParties");
 
-document.addEventListener("DOMContentLoaded", () => {
+let regions = [];
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+
+function init() {
+  if (regionSelect) {
+    regionSelect.addEventListener("change", handleRegionChange);
+  }
   loadAndRender();
-});
+}
 
 async function loadAndRender() {
   try {
@@ -77,14 +40,38 @@ async function loadAndRender() {
       throw new Error("XML soubor se nepodařilo zpracovat.");
     }
 
-    const parties = extractParties(xmlDoc);
-    if (!parties.length) {
-      throw new Error("V souboru nebyly nalezeny žádné kandidující subjekty.");
+    regions = parseResults(xmlDoc);
+
+    if (!regions.length) {
+      throw new Error("V souboru nebyly nalezeny žádné kraje.");
     }
 
-    renderParties(parties);
+    regions.sort((a, b) => {
+      const codeA = Number.parseInt(a.code, 10);
+      const codeB = Number.parseInt(b.code, 10);
+      if (Number.isFinite(codeA) && Number.isFinite(codeB) && codeA !== codeB) {
+        return codeA - codeB;
+      }
+      return a.name.localeCompare(b.name, "cs");
+    });
+
+    populateRegionSelect(regions);
+
+    const initialRegion = regions[0];
+    if (initialRegion) {
+      showRegion(initialRegion);
+      if (regionSelect) {
+        regionSelect.value = initialRegion.code;
+        regionSelect.disabled = false;
+      }
+    }
+
+    if (resultsSection) {
+      resultsSection.hidden = false;
+    }
+
     updateStatus(
-      `Načteno ${parties.length} ${decline(parties.length, "subjekt", "subjekty", "subjektů")}.`,
+      `Načteno ${regions.length} ${decline(regions.length, "kraj", "kraje", "krajů")}.`,
       "success",
       "✅"
     );
@@ -94,74 +81,134 @@ async function loadAndRender() {
   }
 }
 
-function extractParties(xmlDoc) {
-  const partyElements = findElementsByTagNames(
-    xmlDoc.documentElement,
-    PARTY_TAG_NAMES
-  );
-
-  const parties = partyElements.map((partyElement) => parseParty(partyElement));
-  return parties.filter(Boolean);
+function handleRegionChange(event) {
+  const selectedCode = event.target.value;
+  const region = regions.find((item) => item.code === selectedCode);
+  if (region) {
+    showRegion(region);
+  }
 }
 
-function parseParty(partyElement) {
-  const partyName =
-    findTextByTagNames(partyElement, PARTY_NAME_TAGS) ||
-    getAttributeByNames(partyElement, PARTY_NAME_TAGS) ||
-    "Neznámý subjekt";
-
-  let totalVotes = findNumberByTagNames(partyElement, PARTY_TOTAL_VOTES_TAGS);
-  if (!Number.isFinite(totalVotes)) {
-    const fallbackAttribute = getAttributeByNames(
-      partyElement,
-      PARTY_TOTAL_VOTES_TAGS,
-      true
-    );
-    totalVotes = fallbackAttribute;
+function parseResults(xmlDoc) {
+  const root = xmlDoc.documentElement;
+  if (!root || root.localName !== "VYSLEDKY_KANDID") {
+    return [];
   }
 
-  const candidates = extractCandidates(partyElement);
+  const regionElements = Array.from(xmlDoc.getElementsByTagNameNS("*", "KRAJ"));
 
-  if (!Number.isFinite(totalVotes)) {
-    const summedVotes = candidates.reduce((acc, candidate) => {
-      return acc + (candidate.preferenceVotes || 0);
-    }, 0);
-    totalVotes = summedVotes || 0;
-  }
+  return regionElements
+    .filter((element) => element.parentElement === root)
+    .map((regionElement) => parseRegion(regionElement))
+    .filter(Boolean);
+}
 
-  const threshold = Math.ceil(totalVotes * PREFERENCE_THRESHOLD_RATIO);
+function parseRegion(regionElement) {
+  const attributes = collectAttributes(regionElement);
+  const code = attributes.get("CIS_KRAJ") || attributes.get("KOD") || "";
+  const name =
+    attributes.get("NAZ_KRAJ") ||
+    getChildTextByLocalNames(regionElement, ["NAZ_KRAJ", "NAZEV_KRAJE", "NAZEV"]) ||
+    (code ? `Kraj ${code}` : "Neznámý kraj");
 
-  const enhancedCandidates = candidates.map((candidate) => ({
-    ...candidate,
-    qualifies: candidate.preferenceVotes >= threshold && threshold > 0,
-  }));
+  const turnout = parseTurnout(regionElement);
+  const partiesMap = parseParties(regionElement);
+  const candidates = parseCandidates(regionElement);
 
-  const qualifiedCandidates = enhancedCandidates.filter(
-    (candidate) => candidate.qualifies
-  );
+  candidates.forEach((candidate) => {
+    let party = partiesMap.get(candidate.partyCode);
+    if (!party) {
+      party = {
+        code: candidate.partyCode,
+        name: `Strana ${candidate.partyCode}`,
+        totalVotes: 0,
+        candidates: [],
+      };
+      partiesMap.set(candidate.partyCode, party);
+    }
+    party.candidates.push(candidate);
+  });
+
+  const parties = Array.from(partiesMap.values()).map((party) => enhanceParty(party));
+
+  parties.sort((a, b) => {
+    if (b.totalVotes !== a.totalVotes) {
+      return b.totalVotes - a.totalVotes;
+    }
+    return a.name.localeCompare(b.name, "cs");
+  });
 
   return {
-    partyName,
-    totalVotes,
-    threshold,
-    candidates: enhancedCandidates,
-    qualifiedCandidates,
+    code,
+    name,
+    turnout,
+    parties,
   };
 }
 
-function extractCandidates(partyElement) {
-  let candidateElements = findElementsByTagNames(
-    partyElement,
-    CANDIDATE_TAG_NAMES,
-    { onlyChildrenOf: partyElement }
-  );
-
-  if (!candidateElements.length) {
-    candidateElements = findElementsByTagNames(
-      partyElement,
-      CANDIDATE_TAG_NAMES
-    );
+function parseTurnout(regionElement) {
+  const turnoutElement = getFirstChildByLocalName(regionElement, "UCAST");
+  if (!turnoutElement) {
+    return null;
   }
+
+  const attributes = collectAttributes(turnoutElement);
+
+  return {
+    processedPrecincts: parseNumber(attributes.get("OKRSKY_ZPRAC")),
+    precinctsTotal: parseNumber(attributes.get("OKRSKY_CELKEM")),
+    processedPercent: parseNumber(attributes.get("OKRSKY_ZPRAC_PROC")),
+    turnoutPercent: parseNumber(attributes.get("UCAST_PROC")),
+    validVotes: parseNumber(attributes.get("PLATNE_HLASY")),
+  };
+}
+
+function parseParties(regionElement) {
+  const partiesContainer = getFirstChildByLocalName(regionElement, "STRANY");
+  const partiesMap = new Map();
+
+  if (!partiesContainer) {
+    return partiesMap;
+  }
+
+  const partyElements = getChildrenByLocalName(partiesContainer, "STRANA");
+
+  partyElements.forEach((partyElement) => {
+    const attributes = collectAttributes(partyElement);
+    const code = attributes.get("KSTRANA");
+    if (!code) {
+      return;
+    }
+
+    const totalVotes = parseNumber(
+      attributes.get("POC_HLASU") ||
+        getChildTextByLocalNames(partyElement, ["POC_HLASU", "HLASY", "HLASY_CELKEM"])
+    );
+
+    const name =
+      attributes.get("NAZEV_STRANY") ||
+      attributes.get("NAZ_STRANA") ||
+      getChildTextByLocalNames(partyElement, ["NAZEV", "NAZEV_STRANY", "NAZ_STRANA"]) ||
+      `Strana ${code}`;
+
+    partiesMap.set(code, {
+      code,
+      name,
+      totalVotes: Number.isFinite(totalVotes) ? totalVotes : 0,
+      candidates: [],
+    });
+  });
+
+  return partiesMap;
+}
+
+function parseCandidates(regionElement) {
+  const candidatesContainer = getFirstChildByLocalName(regionElement, "KANDIDATI");
+  if (!candidatesContainer) {
+    return [];
+  }
+
+  const candidateElements = getChildrenByLocalName(candidatesContainer, "KANDIDAT");
 
   return candidateElements
     .map((candidateElement) => parseCandidate(candidateElement))
@@ -169,129 +216,242 @@ function extractCandidates(partyElement) {
 }
 
 function parseCandidate(candidateElement) {
-  const prefix =
-    findTextByTagNames(candidateElement, CANDIDATE_TITLE_PREFIX_TAGS) || "";
-  const firstName =
-    findTextByTagNames(candidateElement, CANDIDATE_FIRST_NAME_TAGS) || "";
-  const lastName =
-    findTextByTagNames(candidateElement, CANDIDATE_LAST_NAME_TAGS) || "";
-  const suffix =
-    findTextByTagNames(candidateElement, CANDIDATE_TITLE_SUFFIX_TAGS) || "";
-
-  let displayName =
-    `${prefix} ${[firstName, lastName].filter(Boolean).join(" ")}`.trim();
-  if (!displayName) {
-    displayName = (candidateElement.textContent || "").trim();
-  }
-  if (suffix) {
-    displayName = `${displayName}, ${suffix}`;
-  }
-
-  const preferenceVotes = findNumberByTagNames(
-    candidateElement,
-    CANDIDATE_VOTES_TAGS
-  );
-
-  const votesFromAttribute = getAttributeByNames(
-    candidateElement,
-    CANDIDATE_VOTES_TAGS,
-    true
-  );
-
-  const totalVotes = Number.isFinite(preferenceVotes)
-    ? preferenceVotes
-    : votesFromAttribute;
-
-  if (!Number.isFinite(totalVotes)) {
+  const attributes = collectAttributes(candidateElement);
+  const partyCode = attributes.get("KSTRANA");
+  if (!partyCode) {
     return null;
   }
 
+  const votes = parseNumber(
+    attributes.get("HLASY") ||
+      getChildTextByLocalNames(candidateElement, ["HLASY", "PREF_HLASY", "PREFERENCNI_HLASY"])
+  );
+
+  if (!Number.isFinite(votes)) {
+    return null;
+  }
+
+  const order = parseNumber(attributes.get("PORCISLO"));
+  const prefix =
+    attributes.get("TITUL_PRED") ||
+    attributes.get("TITULPRED") ||
+    getChildTextByLocalNames(candidateElement, ["TITUL_PRED", "TITULPRED"]);
+  const suffix =
+    attributes.get("TITUL_ZA") ||
+    attributes.get("TITULZA") ||
+    getChildTextByLocalNames(candidateElement, ["TITUL_ZA", "TITULZA"]);
+  const firstName =
+    attributes.get("JMENO") ||
+    attributes.get("KRESTNI_JMENO") ||
+    attributes.get("KRESTNIJMENO") ||
+    getChildTextByLocalNames(candidateElement, ["JMENO", "KRESTNI_JMENO", "KRESTNIJMENO"]);
+  const lastName =
+    attributes.get("PRIJMENI") ||
+    getChildTextByLocalNames(candidateElement, ["PRIJMENI", "PRIJMENI_KANDIDATA"]);
+
+  const pieces = [];
+  if (prefix) {
+    pieces.push(prefix);
+  }
+  const coreName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  if (coreName) {
+    pieces.push(coreName);
+  }
+
+  let name = pieces.join(" ").trim();
+  if (!name) {
+    const fallbackText = candidateElement.textContent.trim();
+    name = fallbackText || `Kandidát ${Number.isFinite(order) ? order : ""}`.trim();
+  }
+
+  if (suffix) {
+    name = name ? `${name}, ${suffix}` : suffix;
+  }
+
   return {
-    name: displayName || "Neznámý kandidát",
-    preferenceVotes: totalVotes,
+    partyCode,
+    name,
+    votes,
+    order: Number.isFinite(order) ? order : null,
   };
 }
 
-function renderParties(parties) {
-  const fragment = document.createDocumentFragment();
-  parties.forEach((party) => {
-    const partySection = document.createElement("article");
-    partySection.className = "party";
+function enhanceParty(party) {
+  const threshold = Math.ceil(party.totalVotes * PREFERENCE_THRESHOLD_RATIO);
+  const candidates = party.candidates
+    .slice()
+    .sort((a, b) => {
+      if (b.votes !== a.votes) {
+        return b.votes - a.votes;
+      }
+      if (a.order != null && b.order != null) {
+        return a.order - b.order;
+      }
+      if (a.order != null) {
+        return -1;
+      }
+      if (b.order != null) {
+        return 1;
+      }
+      return a.name.localeCompare(b.name, "cs");
+    })
+    .map((candidate) => ({
+      ...candidate,
+      qualifies: threshold > 0 && candidate.votes >= threshold,
+    }));
 
-    const header = document.createElement("header");
-    header.className = "party__header";
+  const qualifiedCount = candidates.filter((candidate) => candidate.qualifies).length;
 
-    const title = document.createElement("h2");
-    title.className = "party__title";
-    title.textContent = party.partyName;
+  return {
+    ...party,
+    threshold,
+    candidates,
+    qualifiedCount,
+  };
+}
 
-    const meta = document.createElement("p");
-    meta.className = "party__meta";
-    meta.innerHTML = `Celkem hlasů: <strong>${formatNumber(
-      party.totalVotes
-    )}</strong> · Limit pro posun: <strong>${formatNumber(
-      party.threshold
-    )}</strong>`;
+function populateRegionSelect(regionList) {
+  if (!regionSelect) {
+    return;
+  }
 
-    header.append(title, meta);
+  regionSelect.replaceChildren();
 
-    const table = document.createElement("table");
-    table.className = "candidate-table";
+  regionList.forEach((region) => {
+    const option = document.createElement("option");
+    option.value = region.code;
+    option.textContent = region.name;
+    regionSelect.appendChild(option);
+  });
+}
 
-    const thead = document.createElement("thead");
-    const headerRow = document.createElement("tr");
-    ["Kandidát", "Preferenční hlasy", "Splněno"].forEach((label) => {
-      const th = document.createElement("th");
-      th.textContent = label;
-      headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
+function showRegion(region) {
+  if (regionHeading) {
+    regionHeading.textContent = region.name;
+  }
 
-    const tbody = document.createElement("tbody");
+  if (regionMeta) {
+    const parts = [];
+    if (region.turnout) {
+      const { processedPrecincts, precinctsTotal, processedPercent, turnoutPercent, validVotes } =
+        region.turnout;
 
-    if (!party.candidates.length) {
-      const row = document.createElement("tr");
-      const cell = document.createElement("td");
-      cell.colSpan = 3;
-      cell.className = "candidate-table__note";
-      cell.textContent = "U tohoto subjektu nebyli nalezeni žádní kandidáti.";
-      row.appendChild(cell);
-      tbody.appendChild(row);
-    } else {
-      party.candidates
-        .sort((a, b) => b.preferenceVotes - a.preferenceVotes)
-        .forEach((candidate) => {
-          const row = document.createElement("tr");
-          if (candidate.qualifies) {
-            row.classList.add("is-qualified");
-          }
-
-          const nameCell = document.createElement("td");
-          nameCell.textContent = candidate.name;
-
-          const votesCell = document.createElement("td");
-          votesCell.textContent = formatNumber(candidate.preferenceVotes);
-
-          const qualifiesCell = document.createElement("td");
-          qualifiesCell.textContent = candidate.qualifies ? "Ano" : "Ne";
-
-          row.append(nameCell, votesCell, qualifiesCell);
-          tbody.appendChild(row);
-        });
+      if (Number.isFinite(processedPrecincts) && Number.isFinite(precinctsTotal)) {
+        parts.push(`Okrsky zpracovány: ${formatNumber(processedPrecincts)} / ${formatNumber(precinctsTotal)}`);
+      }
+      if (Number.isFinite(processedPercent)) {
+        parts.push(`Zpracováno: ${formatPercent(processedPercent)}`);
+      }
+      if (Number.isFinite(turnoutPercent)) {
+        parts.push(`Účast: ${formatPercent(turnoutPercent)}`);
+      }
+      if (Number.isFinite(validVotes)) {
+        parts.push(`Platné hlasy: ${formatNumber(validVotes)}`);
+      }
     }
 
-    table.append(thead, tbody);
-    partySection.append(header, table);
-    fragment.appendChild(partySection);
-  });
+    regionMeta.textContent = parts.join(" · ");
+    regionMeta.hidden = parts.length === 0;
+  }
 
-  resultsContainer.replaceChildren(fragment);
-  resultsContainer.hidden = false;
+  if (!partiesContainer) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  if (!region.parties.length) {
+    const notice = document.createElement("p");
+    notice.className = "region__notice";
+    notice.textContent = "V tomto kraji nebyly nalezeny žádné kandidující subjekty.";
+    fragment.appendChild(notice);
+  } else {
+    region.parties.forEach((party) => {
+      fragment.appendChild(renderParty(party));
+    });
+  }
+
+  partiesContainer.replaceChildren(fragment);
+}
+
+function renderParty(party) {
+  const article = document.createElement("article");
+  article.className = "party";
+
+  const header = document.createElement("header");
+  header.className = "party__header";
+
+  const title = document.createElement("h3");
+  title.className = "party__title";
+  title.textContent = party.name;
+
+  const meta = document.createElement("p");
+  meta.className = "party__meta";
+  meta.innerHTML = `Celkem hlasů: <strong>${formatNumber(party.totalVotes)}</strong> · Limit pro posun: <strong>${formatNumber(party.threshold)}</strong> · Splnilo: <strong>${party.qualifiedCount}</strong>`;
+
+  header.append(title, meta);
+
+  const table = document.createElement("table");
+  table.className = "candidate-table";
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  ["Pořadí", "Kandidát", "Preferenční hlasy", "Splněno"].forEach((label) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+
+  const tbody = document.createElement("tbody");
+
+  if (!party.candidates.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.className = "candidate-table__note";
+    cell.textContent = "U této strany nebyli nalezeni žádní kandidáti.";
+    row.appendChild(cell);
+    tbody.appendChild(row);
+  } else {
+    party.candidates.forEach((candidate) => {
+      const row = document.createElement("tr");
+      if (candidate.qualifies) {
+        row.classList.add("is-qualified");
+      }
+
+      const orderCell = document.createElement("td");
+      orderCell.textContent = candidate.order != null ? candidate.order.toString() : "–";
+
+      const nameCell = document.createElement("td");
+      nameCell.textContent = candidate.name;
+
+      const votesCell = document.createElement("td");
+      votesCell.textContent = formatNumber(candidate.votes);
+
+      const qualifiesCell = document.createElement("td");
+      qualifiesCell.textContent = candidate.qualifies ? "Ano" : "Ne";
+
+      row.append(orderCell, nameCell, votesCell, qualifiesCell);
+      tbody.appendChild(row);
+    });
+  }
+
+  table.append(thead, tbody);
+  article.append(header, table);
+  return article;
 }
 
 function updateStatus(message, type = "info", icon = "ℹ️") {
-  statusText.textContent = message;
-  statusIcon.textContent = icon;
+  if (statusText) {
+    statusText.textContent = message;
+  }
+  if (statusIcon) {
+    statusIcon.textContent = icon;
+  }
+  if (!statusContainer) {
+    return;
+  }
   statusContainer.classList.remove("status--error", "status--success");
   if (type === "error") {
     statusContainer.classList.add("status--error");
@@ -300,82 +460,68 @@ function updateStatus(message, type = "info", icon = "ℹ️") {
   }
 }
 
-function findElementsByTagNames(root, names, options = {}) {
-  const normalizedNames = names.map((name) => name.toLowerCase());
-  const elements = [];
-  const stack = options.onlyChildrenOf
-    ? Array.from(options.onlyChildrenOf.children)
-    : Array.from(root.getElementsByTagName("*"));
-
-  stack.forEach((node) => {
-    if (normalizedNames.includes(normalizeName(node.tagName))) {
-      elements.push(node);
-    }
+function collectAttributes(element) {
+  const map = new Map();
+  if (!element) {
+    return map;
+  }
+  Array.from(element.attributes || []).forEach((attribute) => {
+    const key = attribute.name.toUpperCase();
+    map.set(key, attribute.value.trim());
   });
-
-  return elements;
+  return map;
 }
 
-function findTextByTagNames(element, tagNames) {
-  const match = findFirstElementByTagNames(element, tagNames);
-  return match ? match.textContent.trim() : "";
+function getFirstChildByLocalName(element, localName) {
+  if (!element) {
+    return null;
+  }
+  return Array.from(element.children).find((child) => child.localName === localName) || null;
 }
 
-function findNumberByTagNames(element, tagNames) {
-  const text = findTextByTagNames(element, tagNames);
-  const value = parseNumber(text);
-  return Number.isFinite(value) ? value : NaN;
+function getChildrenByLocalName(element, localName) {
+  if (!element) {
+    return [];
+  }
+  return Array.from(element.children).filter((child) => child.localName === localName);
 }
 
-function findFirstElementByTagNames(element, tagNames) {
-  const normalized = tagNames.map((name) => name.toLowerCase());
+function getChildTextByLocalNames(element, localNames) {
+  if (!element) {
+    return "";
+  }
   for (const child of Array.from(element.children)) {
-    if (normalized.includes(normalizeName(child.tagName))) {
-      return child;
-    }
-  }
-  const descendants = element.getElementsByTagName("*");
-  for (const descendant of Array.from(descendants)) {
-    if (normalized.includes(normalizeName(descendant.tagName))) {
-      return descendant;
-    }
-  }
-  return null;
-}
-
-function getAttributeByNames(element, names, asNumber = false) {
-  const normalized = names.map((name) => name.toLowerCase());
-  for (const attribute of Array.from(element.attributes || [])) {
-    if (normalized.includes(normalizeName(attribute.name))) {
-      const value = asNumber ? parseNumber(attribute.value) : attribute.value;
-      if (asNumber) {
-        if (Number.isFinite(value)) {
-          return value;
-        }
-      } else if (value) {
-        return value;
+    if (localNames.includes(child.localName)) {
+      const text = child.textContent.trim();
+      if (text) {
+        return text;
       }
     }
   }
-  return asNumber ? NaN : "";
+  return "";
 }
 
 function parseNumber(value) {
-  if (typeof value !== "string") {
+  if (typeof value !== "string" || value.trim() === "") {
     return NaN;
   }
-  const normalized = value.replace(/\s+/g, "").replace(/,/, ".");
-  const parsed = Number(normalized);
+  const normalized = value.replace(/\s+/g, "").replace(/,/g, ".");
+  const parsed = Number.parseFloat(normalized);
   return Number.isFinite(parsed) ? parsed : NaN;
 }
 
-function normalizeName(name) {
-  return (name || "").toString().toLowerCase().split(":").pop();
-}
+const numberFormatter = new Intl.NumberFormat("cs-CZ");
+const percentFormatter = new Intl.NumberFormat("cs-CZ", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
 
 function formatNumber(value) {
-  const formatter = new Intl.NumberFormat("cs-CZ");
-  return formatter.format(Number(value) || 0);
+  return numberFormatter.format(Number.isFinite(value) ? value : 0);
+}
+
+function formatPercent(value) {
+  return `${percentFormatter.format(value)} %`;
 }
 
 function decline(value, singular, paucal, plural) {

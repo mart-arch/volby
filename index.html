@@ -21,7 +21,21 @@
         <span class="status__text">Načítám data…</span>
       </section>
 
-      <section id="results" class="results" hidden></section>
+      <section id="results" class="results" hidden>
+        <div class="results__controls">
+          <label class="results__label" for="regionSelect">Vyberte kraj:</label>
+          <select id="regionSelect" class="results__select" disabled>
+            <option>Načítám…</option>
+          </select>
+        </div>
+
+        <header class="region-header">
+          <h2 id="regionHeading" class="region-header__title"></h2>
+          <p id="regionMeta" class="region-header__meta" hidden></p>
+        </header>
+
+        <div id="regionParties" class="region-parties"></div>
+      </section>
     </main>
 
     <script src="main.js" type="module"></script>
